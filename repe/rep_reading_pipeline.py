@@ -126,26 +126,34 @@ class RepReadingPipeline(Pipeline):
         
         self._validate_params(n_difference, direction_method)
 
-        # initialize a DirectionFinder
+        # initialize a DirectionFinder (In our case a PCAReader)
         direction_finder = DIRECTION_FINDERS[direction_method](**direction_finder_kwargs)
 
 		# if relevant, get the hidden state data for training set
         hidden_states = None
         relative_hidden_states = None
         if direction_finder.needs_hiddens:
+
             # get raw hidden states for the train inputs
+            # This returns a dictionary with one entry per layer
+            # each entry contains the embedding/residual vector (read: output) of that layer for every training example
             hidden_states = self._batched_string_to_hiddens(train_inputs, rep_token, hidden_layers, batch_size, which_hidden_states, **tokenizer_args)
+            print("Hidden States Layer 1 Shape: ", hidden_states.get(-1).shape)
             
             # get differences between pairs
+            # remember that each pair contains one example representing the concept and one example that does not
             relative_hidden_states = {k: np.copy(v) for k, v in hidden_states.items()}
             for layer in hidden_layers:
                 for _ in range(n_difference):
                     relative_hidden_states[layer] = relative_hidden_states[layer][::2] - relative_hidden_states[layer][1::2]
 
 		# get the directions
+        # This calls the PCA stuff
         direction_finder.directions = direction_finder.get_rep_directions(
             self.model, self.tokenizer, relative_hidden_states, hidden_layers,
             train_choices=train_labels)
+
+        # Convert directions to float32
         for layer in direction_finder.directions:
             if type(direction_finder.directions[layer]) == np.ndarray:
                 direction_finder.directions[layer] = direction_finder.directions[layer].astype(np.float32)

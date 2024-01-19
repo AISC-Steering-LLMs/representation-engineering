@@ -7,7 +7,7 @@ def primary_emotions_concept_dataset(data_dir, user_tag='', assistant_tag='', se
     random.seed(0)
 
     template_str = '{user_tag} Consider the {emotion} of the following scenario:\nScenario: {scenario}\nAnswer: {assistant_tag} '
-    emotions = ["happiness", "sadness", "anger", "fear", "disgust", "surprise", "honesty"]
+    emotions = ["happiness", "sadness", "anger", "fear", "disgust", "surprise"]
     raw_data = {}
     for emotion in emotions:
         with open(os.path.join(data_dir, f'{emotion}.json')) as file:

@@ -8,12 +8,13 @@ class RepControlPipeline(TextGenerationPipeline):
                  layers, 
                  block_name="decoder_block", 
                  control_method="reading_vec",
+                 model_type="default",
                  **kwargs):
         
         # TODO: implement different control method and supported intermediate modules for different models
         assert control_method == "reading_vec", f"{control_method} not supported yet"
         assert block_name == "decoder_block" or "LlamaForCausalLM" in model.config.architectures, f"{model.config.architectures} {block_name} not supported yet"
-        self.wrapped_model = WrappedReadingVecModel(model, tokenizer)
+        self.wrapped_model = WrappedReadingVecModel(model, tokenizer, model_type=model_type)
         self.wrapped_model.unwrap()
         self.wrapped_model.wrap_block(layers, block_name=block_name)
         self.block_name = block_name

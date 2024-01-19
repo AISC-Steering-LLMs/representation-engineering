@@ -134,23 +134,26 @@ class PCARepReader(RepReader):
         self.n_components = n_components
         self.H_train_means = {}
 
+
+    # Returns a vector (in the embedding space) for each hidden layer that *hopefully* points in the direction of that concept
     def get_rep_directions(self, model, tokenizer, hidden_states, hidden_layers, **kwargs):
         """Get PCA components for each layer"""
         directions = {}
 
         for layer in hidden_layers:
-            H_train = hidden_states[layer]
-            H_train_mean = H_train.mean(axis=0, keepdims=True)
+            H_train = hidden_states[layer] # Relative hidden states one for each pair
+            H_train_mean = H_train.mean(axis=0, keepdims=True) # Calculate the mean, returns a 5210 dimensional vector in the embedding space
             self.H_train_means[layer] = H_train_mean
-            H_train = recenter(H_train, mean=H_train_mean).cpu()
+            H_train = recenter(H_train, mean=H_train_mean).cpu() # subtract the mean
             H_train = np.vstack(H_train)
             pca_model = PCA(n_components=self.n_components, whiten=False).fit(H_train)
 
-            directions[layer] = pca_model.components_ # shape (n_components, n_features)
+            directions[layer] = pca_model.components_ # shape (1, 5120) (n_components, n_features)
             self.n_components = pca_model.n_components_
         
         return directions
 
+    # AFAIK this is just because we shuffle the train_data pairs and so we don't know which direction the vectors point
     def get_signs(self, hidden_states, train_labels, hidden_layers):
 
         signs = {}
@@ -158,22 +161,30 @@ class PCARepReader(RepReader):
         for layer in hidden_layers:
             assert hidden_states[layer].shape[0] == len(np.concatenate(train_labels)), f"Shape mismatch between hidden states ({hidden_states[layer].shape[0]}) and labels ({len(np.concatenate(train_labels))})"
             layer_hidden_states = hidden_states[layer]
+            if layer == -1:
+                print("Layer hidden state shape get_signs(): ", layer_hidden_states.shape)
 
             # NOTE: since scoring is ultimately comparative, the effect of this is moot
             layer_hidden_states = recenter(layer_hidden_states, mean=self.H_train_means[layer])
 
             # get the signs for each component
             layer_signs = np.zeros(self.n_components)
+            # We only keep the first component, so this only gets run once per layer
             for component_index in range(self.n_components):
 
+                # Project hidden state (not relative) onto PCA Component
+                # Creates a vector where each component corresponds to one example input
                 transformed_hidden_states = project_onto_direction(layer_hidden_states, self.directions[layer][component_index]).cpu()
                 
+                # slices that vector up so we end up with two values per example pair
                 pca_outputs_comp = [list(islice(transformed_hidden_states, sum(len(c) for c in train_labels[:i]), sum(len(c) for c in train_labels[:i+1]))) for i in range(len(train_labels))]
+                if layer == -1:
+                    print(len(pca_outputs_comp))
+                    print(pca_outputs_comp)
 
                 # We do elements instead of argmin/max because sometimes we pad random choices in training
                 pca_outputs_min = np.mean([o[train_labels[i].index(1)] == min(o) for i, o in enumerate(pca_outputs_comp)])
                 pca_outputs_max = np.mean([o[train_labels[i].index(1)] == max(o) for i, o in enumerate(pca_outputs_comp)])
-
        
                 layer_signs[component_index] = np.sign(np.mean(pca_outputs_max) - np.mean(pca_outputs_min))
                 if layer_signs[component_index] == 0:
